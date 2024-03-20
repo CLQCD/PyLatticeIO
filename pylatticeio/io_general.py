@@ -126,14 +126,14 @@ class _FileType(NamedTuple):
         return tuple([self.dimensions[i].n_indices for i in range(self.n_dimensions)])
 
 
-header_format = "<" + "i" + ("ii" + "i" * 1024) * 16
-header_size = 4 + (8 + 4 * 1024) * 16
+_header_format = "<" + "i" + ("ii" + "i" * 1024) * 16
+_header_size = 4 + (8 + 4 * 1024) * 16
 
 
 def read(filename: str):
     filename = path.expanduser(path.expandvars(filename))
     with open(filename, "rb") as f:
-        head_raw = struct.unpack(header_format, f.read(102400)[:header_size])
+        head_raw = struct.unpack(_header_format, f.read(102400)[:_header_size])
         head = _FileType(
             head_raw[0],
             [
