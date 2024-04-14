@@ -1,7 +1,7 @@
-from ctypes import Structure, c_int
+from ctypes import Union, Structure, c_char, c_int, sizeof
 from os import path
 from enum import IntEnum
-from typing import Sequence
+from typing import Any, Sequence
 
 import numpy
 
@@ -108,7 +108,7 @@ class _DimensionType(IntEnum):
 
 
 class _OneDim(Structure):
-    _pack_ = 1
+    # _pack_ = 1
     _fields_ = [("type", c_int), ("n_indices", c_int), ("indices", c_int * 1024)]
 
     type: int
@@ -116,8 +116,8 @@ class _OneDim(Structure):
     indices: Sequence[int]
 
 
-class _FileType(Structure):
-    _pack_ = 1
+class _Head(Structure):
+    # _pack_ = 1
     _fields_ = [("n_dimensions", c_int), ("dimensions", _OneDim * 16)]
 
     n_dimensions: int
@@ -132,10 +132,47 @@ class _FileType(Structure):
         return tuple([self.dimensions[i].n_indices for i in range(self.n_dimensions)])
 
 
+class _FileType(Union):
+    _fields_ = [("head", _Head), ("blank", c_char * 102400)]
+
+    head: _Head
+    blank: bytes
+
+    @property
+    def n_dimensions(self):
+        return self.head.n_dimensions
+
+    @n_dimensions.setter
+    def n_dimensions(self, value):
+        self.head.n_dimensions = value
+
+    @property
+    def dimensions(self):
+        return self.head.dimensions
+
+    @property
+    def dimensions_type(self):
+        return self.head.dimensions_type
+
+    @property
+    def dimensions_n_indices(self):
+        return self.head.dimensions_n_indices
+
+
 def read(filename: str):
     filename = path.expanduser(path.expandvars(filename))
     with open(filename, "rb") as f:
-        head = _FileType.from_buffer_copy(f.read(102400))
+        head = _FileType.from_buffer_copy(f.read(sizeof(_FileType)))
         data = numpy.frombuffer(f.read(), "<f8").reshape(head.dimensions_n_indices)
 
-    return data
+    return head, data
+
+
+def write(filename: str, head: _FileType, data: numpy.ndarray[Any, numpy.float64]):
+    assert head.dimensions_n_indices == data.shape
+    assert data.dtype == numpy.float64
+
+    filename = path.expanduser(path.expandvars(filename))
+    with open(filename, "wb") as f:
+        f.write(bytes(head))
+        f.write(data.tobytes())
