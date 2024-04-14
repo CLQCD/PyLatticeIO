@@ -1,7 +1,7 @@
-from ctypes import Structure, c_int
 from os import path
 from enum import IntEnum
-from typing import Sequence
+import struct
+from typing import NamedTuple
 
 import numpy
 
@@ -107,35 +107,44 @@ class _DimensionType(IntEnum):
     dim_last = 68
 
 
-class _OneDim(Structure):
-    _pack_ = 1
-    _fields_ = [("type", c_int), ("n_indices", c_int), ("indices", c_int * 1024)]
-
-    type: int
+class _OneDim(NamedTuple):
+    type: _DimensionType
     n_indices: int
-    indices: Sequence[int]
+    indices: list[int]
 
 
-class _FileType(Structure):
-    _pack_ = 1
-    _fields_ = [("n_dimensions", c_int), ("dimensions", _OneDim * 16)]
-
+class _FileType(NamedTuple):
     n_dimensions: int
-    dimensions: Sequence[_OneDim]
+    dimensions: list[_OneDim]
 
     @property
     def dimensions_type(self):
-        return tuple([_DimensionType(self.dimensions[i].type)._name_[4:] for i in range(self.n_dimensions)])
+        return tuple([self.dimensions[i].type._name_ for i in range(self.n_dimensions)])
 
     @property
     def dimensions_n_indices(self):
         return tuple([self.dimensions[i].n_indices for i in range(self.n_dimensions)])
 
 
+_header_format = "<" + "i" + ("ii" + "i" * 1024) * 16
+_header_size = 4 + (8 + 4 * 1024) * 16
+
+
 def read(filename: str):
     filename = path.expanduser(path.expandvars(filename))
     with open(filename, "rb") as f:
-        head = _FileType.from_buffer_copy(f.read(102400))
+        head_raw = struct.unpack(_header_format, f.read(102400)[:_header_size])
+        head = _FileType(
+            head_raw[0],
+            [
+                _OneDim(
+                    _DimensionType(head_raw[1 + dimension * 1026 + 0]),
+                    head_raw[1 + dimension * 1026 + 1],
+                    head_raw[1 + dimension * 1026 + 2 : 1 + dimension * 1026 + 1026],
+                )
+                for dimension in range(16)
+            ],
+        )
         data = numpy.frombuffer(f.read(), "<f8").reshape(head.dimensions_n_indices)
 
     return data
