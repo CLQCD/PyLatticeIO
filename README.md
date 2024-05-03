@@ -6,6 +6,8 @@ This repository contains Python implementations to read and write different latt
 
 Just loading data into NumPy format is useless, and you should use these I/O samples along with your analysis script.
 
+The propagator will be rotated to DeGrand-Rossi basis.
+
 ## Returned NDArray
 | Type                 | shape                              | dtype        | Comment           |
 | -------------------- | ---------------------------------- | ------------ | ----------------- |
@@ -21,5 +23,5 @@ Just loading data into NumPy format is useless, and you should use these I/O sam
 | ---------- | ---------- | ---------- | ----- |
 | Chroma     | Read       | Read       |       |
 | MILC       | Read       | Read       |       |
-| KYU        | Read/Write |            |       |
+| KYU        | Read/Write | Read/Write |       |
 | IO General |            |            | Read  |

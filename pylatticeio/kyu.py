@@ -40,32 +40,42 @@ def writeGauge(filename: str, gauge_ndarray: NDArray[numpy.complex128]):
         f.write(kyu_binary_data)
 
 
-# [2, Ns, Nc, Lt, Lz, Ly, Lx] ">f8"
-def readFermion(filename: str, latt_size: List[int]):
+def readPropagator(filename: str, latt_size: List[int]):
     filename = path.expanduser(path.expandvars(filename))
     with open(filename, "rb") as f:
         kyu_binary_data = f.read()
 
     Lx, Ly, Lz, Lt = latt_size
-    return (
+    kyu_data = (
         numpy.frombuffer(kyu_binary_data, ">f8")
-        .reshape(2, Ns, Nc, Lt, Lz, Ly, Lx)
+        .reshape(Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx)
         .astype("<f8")
-        .transpose(3, 4, 5, 6, 1, 2, 0)
-        .reshape(Lt, Lz, Ly, Lx, Ns, Nc * 2)
+        .transpose(5, 6, 7, 8, 3, 0, 4, 1, 2)
+        .reshape(Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc * 2)
         .view("<c16")
     )
+    data = numpy.zeros_like(kyu_data)
+    data[:, :, :, :, 0] = -(2**-0.5) * kyu_data[:, :, :, :, 1] - 2**-0.5 * kyu_data[:, :, :, :, 3]
+    data[:, :, :, :, 1] = +(2**-0.5) * kyu_data[:, :, :, :, 2] + 2**-0.5 * kyu_data[:, :, :, :, 0]
+    data[:, :, :, :, 2] = +(2**-0.5) * kyu_data[:, :, :, :, 3] - 2**-0.5 * kyu_data[:, :, :, :, 1]
+    data[:, :, :, :, 3] = +(2**-0.5) * kyu_data[:, :, :, :, 0] - 2**-0.5 * kyu_data[:, :, :, :, 2]
+    return data
 
 
-def writeFermion(filename: str, fermion_ndarray: NDArray):
+def writePropagator(filename: str, data: NDArray[numpy.complex128]):
     filename = path.expanduser(path.expandvars(filename))
-    latt_size = fermion_ndarray.shape[3:-1:-1]
+    latt_size = data.shape[3:-1:-1]
 
     Lx, Ly, Lz, Lt = latt_size
+    kyu_data = numpy.zeros_like(data)
+    kyu_data[:, :, :, :, 0] = +(2**-0.5) * data[:, :, :, :, 1] + 2**-0.5 * data[:, :, :, :, 3]
+    kyu_data[:, :, :, :, 1] = -(2**-0.5) * data[:, :, :, :, 2] - 2**-0.5 * data[:, :, :, :, 0]
+    kyu_data[:, :, :, :, 2] = -(2**-0.5) * data[:, :, :, :, 3] + 2**-0.5 * data[:, :, :, :, 1]
+    kyu_data[:, :, :, :, 3] = -(2**-0.5) * data[:, :, :, :, 0] + 2**-0.5 * data[:, :, :, :, 2]
     kyu_binary_data = (
-        fermion_ndarray.view("<f8")
-        .reshape(Lt, Lz, Ly, Lx, Ns, Nc, 2)
-        .transpose(6, 4, 5, 0, 1, 2, 3)
+        kyu_data.view("<f8")
+        .reshape(Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc, 2)
+        .transpose(5, 7, 8, 4, 6, 0, 1, 2, 3)
         .astype(">f8")
         .tobytes()
     )
