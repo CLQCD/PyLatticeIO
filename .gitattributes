@@ -1,0 +1,5 @@
+data/weak_field.kyu filter=lfs diff=lfs merge=lfs -text
+data/weak_field.lime filter=lfs diff=lfs merge=lfs -text
+data/pt_prop_1 filter=lfs diff=lfs merge=lfs -text
+data/pt_prop_1.kyu filter=lfs diff=lfs merge=lfs -text
+data/pt_prop_1.kyu_f filter=lfs diff=lfs merge=lfs -text

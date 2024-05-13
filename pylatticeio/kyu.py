@@ -2,82 +2,186 @@ from os import path
 from typing import List
 
 import numpy
-from numpy.typing import NDArray
 
-from ._qcd import Ns, Nc, Nd
+from .field import Ns, Nc, Nd, LatticeInfo
 
 
-# [Nd, Nc, Nc, 2, Lt, Lz, Ly, Lx] >f8
-def readGauge(filename: str, latt_size: List[int]):
-    filename = path.expanduser(path.expandvars(filename))
-    with open(filename, "rb") as f:
-        kyu_binary_data = f.read()
+def fromGaugeBuffer(filename: str, offset: int, dtype: str, latt_info: LatticeInfo):
+    from . import openMPIFileRead, getMPIDatatype
 
-    Lx, Ly, Lz, Lt = latt_size
-    return (
-        numpy.frombuffer(kyu_binary_data, ">f8")
-        .reshape(Nd, Nc, Nc, 2, Lt, Lz, Ly, Lx)
+    Gx, Gy, Gz, Gt = latt_info.grid_size
+    gx, gy, gz, gt = latt_info.grid_coord
+    Lx, Ly, Lz, Lt = latt_info.size
+    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
+
+    fh = openMPIFileRead(filename)
+    gauge_raw = numpy.empty((Nd, Nc, Nc, 2, Lt, Lz, Ly, Lx), native_dtype)
+    filetype = getMPIDatatype(native_dtype).Create_subarray(
+        (Nd, Nc, Nc, 2, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx),
+        (Nd, Nc, Nc, 2, Lt, Lz, Ly, Lx),
+        (0, 0, 0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx),
+    )
+    filetype.Commit()
+    fh.Set_view(offset, filetype=filetype)
+    fh.Read_all(gauge_raw)
+    filetype.Free()
+    fh.Close()
+
+    gauge_raw = (
+        gauge_raw.transpose(0, 4, 5, 6, 7, 2, 1, 3)
+        .view(dtype)
         .astype("<f8")
-        .transpose(0, 4, 5, 6, 7, 2, 1, 3)
+        .copy()
         .reshape(Nd, Lt, Lz, Ly, Lx, Nc, Nc * 2)
         .view("<c16")
     )
 
+    return gauge_raw
 
-def writeGauge(filename: str, gauge_ndarray: NDArray[numpy.complex128]):
-    filename = path.expanduser(path.expandvars(filename))
-    latt_size = gauge_ndarray.shape[4:0:-1]
 
-    Lx, Ly, Lz, Lt = latt_size
-    kyu_binary_data = (
-        gauge_ndarray.view("<f8")
+def toGaugeBuffer(filename: str, offset: int, gauge_raw: numpy.ndarray, dtype: str, latt_info: LatticeInfo):
+    from . import openMPIFileWrite, getMPIDatatype
+
+    Gx, Gy, Gz, Gt = latt_info.grid_size
+    gx, gy, gz, gt = latt_info.grid_coord
+    Lx, Ly, Lz, Lt = latt_info.size
+    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
+
+    fh = openMPIFileWrite(filename)
+    gauge_raw = (
+        gauge_raw.view("<f8")
         .reshape(Nd, Lt, Lz, Ly, Lx, Nc, Nc, 2)
+        .astype(dtype)
+        .view(native_dtype)
         .transpose(0, 6, 5, 7, 1, 2, 3, 4)
-        .astype(">f8")
-        .tobytes()
+        .copy()
     )
-    with open(filename, "wb") as f:
-        f.write(kyu_binary_data)
+    filetype = getMPIDatatype(native_dtype).Create_subarray(
+        (Nd, Nc, Nc, 2, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx),
+        (Nd, Nc, Nc, 2, Lt, Lz, Ly, Lx),
+        (0, 0, 0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx),
+    )
+    filetype.Commit()
+    fh.Set_view(offset, filetype=filetype)
+    fh.Write_all(gauge_raw)
+    filetype.Free()
+    fh.Close()
+
+
+def readGauge(filename: str, latt_size: List[int]):
+    filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(latt_size)
+
+    return fromGaugeBuffer(filename, 0, ">f8", latt_info)
+
+
+def writeGauge(filename: str, gauge: numpy.ndarray):
+    filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(gauge.shape[1:5][::-1])
+
+    toGaugeBuffer(filename, 0, gauge, ">f8", latt_info)
+
+
+# matrices to convert gamma basis bewteen DeGrand-Rossi and Dirac-Pauli
+# \psi(DP) = _DR_TO_DP \psi(DR)
+# \psi(DR) = _DP_TO_DR \psi(DP)
+_DP_TO_DR = [
+    [0, 1, 0, -1],
+    [-1, 0, 1, 0],
+    [0, 1, 0, 1],
+    [-1, 0, -1, 0],
+]
+_DR_TO_DP = [
+    [0, -1, 0, -1],
+    [1, 0, 1, 0],
+    [0, 1, 0, -1],
+    [-1, 0, 1, 0],
+]
+
+
+def rotateToDiracPauli(propagator: numpy.ndarray):
+    A = numpy.asarray(_DP_TO_DR)
+    Ainv = numpy.asarray(_DR_TO_DP) / 2
+
+    return numpy.ascontiguousarray(numpy.einsum("ij,tzyxjkab,kl->tzyxilab", Ainv, propagator, A, optimize=True))
+
+
+def rotateToDeGrandRossi(propagator: numpy.ndarray):
+    A = numpy.asarray(_DR_TO_DP)
+    Ainv = numpy.asarray(_DP_TO_DR) / 2
+
+    return numpy.ascontiguousarray(numpy.einsum("ij,tzyxjkab,kl->tzyxilab", Ainv, propagator, A, optimize=True))
+
+
+def fromPropagatorBuffer(filename: str, offset: int, dtype: str, latt_info: LatticeInfo):
+    from . import openMPIFileRead, getMPIDatatype
+
+    Gx, Gy, Gz, Gt = latt_info.grid_size
+    gx, gy, gz, gt = latt_info.grid_coord
+    Lx, Ly, Lz, Lt = latt_info.size
+    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
+
+    fh = openMPIFileRead(filename)
+    propagator_raw = numpy.empty((Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx), native_dtype)
+    filetype = getMPIDatatype(native_dtype).Create_subarray(
+        (Ns, Nc, 2, Ns, Nc, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx),
+        (Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx),
+        (0, 0, 0, 0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx),
+    )
+    filetype.Commit()
+    fh.Set_view(offset, filetype=filetype)
+    fh.Read_all(propagator_raw)
+    filetype.Free()
+    fh.Close()
+
+    return (
+        propagator_raw.transpose(5, 6, 7, 8, 3, 0, 4, 1, 2)
+        .view(dtype)
+        .astype("<f8")
+        .copy()
+        .reshape(Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc * 2)
+        .view("<c16")
+    )
+
+
+def toPropagatorBuffer(filename: str, offset: int, propagator_raw: numpy.ndarray, dtype: str, latt_info: LatticeInfo):
+    from . import openMPIFileWrite, getMPIDatatype
+
+    Gx, Gy, Gz, Gt = latt_info.grid_size
+    gx, gy, gz, gt = latt_info.grid_coord
+    Lx, Ly, Lz, Lt = latt_info.size
+    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
+
+    fh = openMPIFileWrite(filename)
+    propagator_raw = (
+        propagator_raw.view("<f8")
+        .reshape(Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc, 2)
+        .astype(dtype)
+        .view(native_dtype)
+        .transpose(5, 7, 8, 4, 6, 0, 1, 2, 3)
+        .copy()
+    )
+    filetype = getMPIDatatype(native_dtype).Create_subarray(
+        (Ns, Nc, 2, Ns, Nc, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx),
+        (Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx),
+        (0, 0, 0, 0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx),
+    )
+    filetype.Commit()
+    fh.Set_view(offset, filetype=filetype)
+    fh.Write_all(propagator_raw)
+    filetype.Free()
+    fh.Close()
 
 
 def readPropagator(filename: str, latt_size: List[int]):
     filename = path.expanduser(path.expandvars(filename))
-    with open(filename, "rb") as f:
-        kyu_binary_data = f.read()
+    latt_info = LatticeInfo(latt_size)
 
-    Lx, Ly, Lz, Lt = latt_size
-    kyu_data = (
-        numpy.frombuffer(kyu_binary_data, ">f8")
-        .reshape(Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx)
-        .astype("<f8")
-        .transpose(5, 6, 7, 8, 3, 0, 4, 1, 2)
-        .reshape(Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc * 2)
-        .view("<c16")
-    )
-    data = numpy.zeros_like(kyu_data)
-    data[:, :, :, :, 0] = -(2**-0.5) * kyu_data[:, :, :, :, 1] - 2**-0.5 * kyu_data[:, :, :, :, 3]
-    data[:, :, :, :, 1] = +(2**-0.5) * kyu_data[:, :, :, :, 2] + 2**-0.5 * kyu_data[:, :, :, :, 0]
-    data[:, :, :, :, 2] = +(2**-0.5) * kyu_data[:, :, :, :, 3] - 2**-0.5 * kyu_data[:, :, :, :, 1]
-    data[:, :, :, :, 3] = +(2**-0.5) * kyu_data[:, :, :, :, 0] - 2**-0.5 * kyu_data[:, :, :, :, 2]
-    return data
+    return rotateToDeGrandRossi(fromPropagatorBuffer(filename, 0, ">f8", latt_info))
 
 
-def writePropagator(filename: str, data: NDArray[numpy.complex128]):
+def writePropagator(filename: str, propagator: numpy.ndarray):
     filename = path.expanduser(path.expandvars(filename))
-    latt_size = data.shape[3:-1:-1]
+    latt_info = LatticeInfo(propagator.shape[0:4][::-1])
 
-    Lx, Ly, Lz, Lt = latt_size
-    kyu_data = numpy.zeros_like(data)
-    kyu_data[:, :, :, :, 0] = +(2**-0.5) * data[:, :, :, :, 1] + 2**-0.5 * data[:, :, :, :, 3]
-    kyu_data[:, :, :, :, 1] = -(2**-0.5) * data[:, :, :, :, 2] - 2**-0.5 * data[:, :, :, :, 0]
-    kyu_data[:, :, :, :, 2] = -(2**-0.5) * data[:, :, :, :, 3] + 2**-0.5 * data[:, :, :, :, 1]
-    kyu_data[:, :, :, :, 3] = -(2**-0.5) * data[:, :, :, :, 0] + 2**-0.5 * data[:, :, :, :, 2]
-    kyu_binary_data = (
-        kyu_data.view("<f8")
-        .reshape(Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc, 2)
-        .transpose(5, 7, 8, 4, 6, 0, 1, 2, 3)
-        .astype(">f8")
-        .tobytes()
-    )
-    with open(filename, "wb") as f:
-        f.write(kyu_binary_data)
+    toPropagatorBuffer(filename, 0, rotateToDiracPauli(propagator), ">f8", latt_info)

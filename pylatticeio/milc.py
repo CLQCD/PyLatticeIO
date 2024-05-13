@@ -6,12 +6,35 @@ from xml.etree import ElementTree as ET
 
 import numpy
 
-from ._qcd import Ns, Nc, Nd
+from .field import Ns, Nc, Nd, LatticeInfo
 
-_precision_map = {"D": 8, "S": 4}
+_precision_map = {"D": 8, "F": 4, "S": 4}
 
 
-# [Lt, Lz, Ly, Lx, Nd, Nc, Nc, 2] f"{endian}c8"
+def fromGaugeBuffer(filename: str, offset: int, dtype: str, latt_info: LatticeInfo):
+    from . import openMPIFileRead, getMPIDatatype
+
+    Gx, Gy, Gz, Gt = latt_info.grid_size
+    gx, gy, gz, gt = latt_info.grid_coord
+    Lx, Ly, Lz, Lt = latt_info.size
+    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
+
+    fh = openMPIFileRead(filename)
+    gauge_raw = numpy.empty((Lt, Lz, Ly, Lx, Nd, Nc, Nc), native_dtype)
+    filetype = getMPIDatatype(native_dtype).Create_subarray(
+        (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Nd, Nc, Nc),
+        (Lt, Lz, Ly, Lx, Nd, Nc, Nc),
+        (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0, 0),
+    )
+    filetype.Commit()
+    fh.Set_view(offset, filetype=filetype)
+    fh.Read_all(gauge_raw)
+    filetype.Free()
+    fh.Close()
+
+    return gauge_raw.transpose(4, 0, 1, 2, 3, 5, 6).view(dtype).astype("<c16")
+
+
 def readGauge(filename: str):
     filename = path.expanduser(path.expandvars(filename))
     with open(filename, "rb") as f:
@@ -25,16 +48,52 @@ def readGauge(filename: str):
         time_stamp = f.read(64).decode()
         assert struct.unpack(f"{endian}i", f.read(4))[0] == 0
         sum29, sum31 = struct.unpack(f"{endian}II", f.read(8))
-        milc_binary_data = f.read()
-    # print(time_stamp, sum29, sum31)
+        offset = f.tell()
+    latt_info = LatticeInfo(latt_size)
+    return fromGaugeBuffer(filename, offset, f"{endian}c8", latt_info)
 
-    Lx, Ly, Lz, Lt = latt_size
-    return (
-        numpy.frombuffer(milc_binary_data, f"{endian}c8")
-        .reshape(Lt, Lz, Ly, Lx, Nd, Nc, Nc)
-        .astype("<c16")
-        .transpose(4, 0, 1, 2, 3, 5, 6)
-    )
+
+def fromMultiSCIDACPropagatorBuffer(
+    filename: str, offset: List[int], dtype: str, latt_info: LatticeInfo, staggered: bool
+):
+    from . import openMPIFileRead, getMPIDatatype
+
+    Gx, Gy, Gz, Gt = latt_info.grid_size
+    gx, gy, gz, gt = latt_info.grid_coord
+    Lx, Ly, Lz, Lt = latt_info.size
+    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
+
+    fh = openMPIFileRead(filename)
+    if not staggered:
+        propagator_raw = numpy.empty((Ns, Nc, Lt, Lz, Ly, Lx, Ns, Nc), native_dtype)
+        filetype = getMPIDatatype(native_dtype).Create_subarray(
+            (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Ns, Nc),
+            (Lt, Lz, Ly, Lx, Ns, Nc),
+            (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0),
+        )
+        filetype.Commit()
+        for spin in range(Ns):
+            for color in range(Nc):
+                fh.Set_view(offset[spin * Nc + color], filetype=filetype)
+                fh.Read_all(propagator_raw[spin, color])
+        filetype.Free()
+        propagator_raw = propagator_raw.transpose(2, 3, 4, 5, 6, 0, 7, 1).view(dtype).astype("<c16")
+    else:
+        propagator_raw = numpy.empty((Nc, Lt, Lz, Ly, Lx, Nc), native_dtype)
+        filetype = getMPIDatatype(native_dtype).Create_subarray(
+            (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Nc),
+            (Lt, Lz, Ly, Lx, Nc),
+            (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0),
+        )
+        filetype.Commit()
+        for color in range(Nc):
+            fh.Set_view(offset[color], filetype=filetype)
+            fh.Read_all(propagator_raw[color])
+        filetype.Free()
+        propagator_raw = propagator_raw.transpose(1, 2, 3, 4, 5, 0).view(dtype).astype("<c16")
+    fh.Close()
+
+    return propagator_raw
 
 
 def readQIOPropagator(filename: str):
@@ -61,10 +120,9 @@ def readQIOPropagator(filename: str):
         scidac_private_record_xml = ET.ElementTree(
             ET.fromstring(f.read(meta["scidac-private-record-xml"][1][1]).strip(b"\x00").decode("utf-8"))
         )
-        scidac_binary_data = b""
+        offset = []
         for meta_scidac_binary_data in meta["scidac-binary-data"][1::2]:
-            f.seek(meta_scidac_binary_data[0])
-            scidac_binary_data += f.read(meta_scidac_binary_data[1])
+            offset.append(meta_scidac_binary_data[0])
     precision = _precision_map[scidac_private_record_xml.find("precision").text]
     assert int(scidac_private_record_xml.find("colors").text) == Nc
     if scidac_private_record_xml.find("spins") is not None:
@@ -77,25 +135,7 @@ def readQIOPropagator(filename: str):
     else:
         raise ValueError(f"Unknown typesize={typesize} in MILC QIO propagator")
     assert int(scidac_private_record_xml.find("datacount").text) == 1
-    dtype = f">c{2*precision}"
     assert int(scidac_private_file_xml.find("spacetime").text) == Nd
-    latt_size = map(int, scidac_private_file_xml.find("dims").text.split())
-
-    Lx, Ly, Lz, Lt = latt_size
-    if not staggered:
-        from warnings import warn
-
-        warn("WARNING: NOT sure about MILC QIO format for Wilson propagator!!!")
-        return (
-            numpy.frombuffer(scidac_binary_data, dtype)
-            .reshape(Ns, Nc, Lt, Lz, Ly, Lx, Ns, Nc)
-            .astype("<c16")
-            .transpose(2, 3, 4, 5, 6, 0, 7, 1)
-        )
-    else:
-        return (
-            numpy.frombuffer(scidac_binary_data, dtype)
-            .reshape(Nc, Lt, Lz, Ly, Lx, Nc)
-            .astype("<c16")
-            .transpose(1, 2, 3, 4, 5, 0)
-        )
+    latt_size = [int(L) for L in scidac_private_file_xml.find("dims").text.split()]
+    latt_info = LatticeInfo(latt_size)
+    return fromMultiSCIDACPropagatorBuffer(filename, offset, f">c{2*precision}", latt_info, staggered)
