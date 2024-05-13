@@ -91,8 +91,12 @@ def readPropagator(filename: str, latt_size: List[int]):
 
 
 def writePropagator(filename: str, propagator: numpy.ndarray):
+    from . import getGridSize
+
     filename = path.expanduser(path.expandvars(filename))
-    latt_info = LatticeInfo(propagator.shape[0:4][::-1])
+    Lx, Ly, Lz, Lt = propagator.shape[0:4][::-1]
+    Gx, Gy, Gz, Gt = getGridSize()
+    latt_info = LatticeInfo([Gx * Lx, Gy * Ly, Gz * Lz, Gt * Lt])
 
     toPropagatorBuffer(filename, 0, rotateToDiracPauli(propagator), "<c8", latt_info)
 
@@ -126,8 +130,12 @@ class StopWatch:
 
 
 def writePropagatorFast(filename: str, propagator: numpy.ndarray):
+    from . import getGridSize
+
     filename = path.expanduser(path.expandvars(filename))
-    latt_info = LatticeInfo(propagator.shape[0:4][::-1])
+    Lx, Ly, Lz, Lt = propagator.shape[0:4][::-1]
+    Gx, Gy, Gz, Gt = getGridSize()
+    latt_info = LatticeInfo([Gx * Lx, Gy * Ly, Gz * Lz, Gt * Lt])
 
     stopWatch = StopWatch()
     stopWatch.reset()

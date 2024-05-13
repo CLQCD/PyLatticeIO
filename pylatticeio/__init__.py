@@ -18,7 +18,7 @@ from mpi4py.util import dtlib
 _MPI_COMM: MPI.Comm = MPI.COMM_WORLD
 _MPI_SIZE: int = _MPI_COMM.Get_size()
 _MPI_RANK: int = _MPI_COMM.Get_rank()
-_GRID_SIZE: List[int] = None
+_GRID_SIZE: List[int] = [1, 1, 1, 1]
 _GRID_COORD: List[int] = [0, 0, 0, 0]
 
 
@@ -43,25 +43,6 @@ def printRoot(
         print(*values, sep=sep, end=end, file=file, flush=flush)
 
 
-def init(
-    grid_size: List[int] = None,
-):
-    """
-    Initialize MPI along with the QUDA library.
-    """
-    filterwarnings("default", "", DeprecationWarning)
-    global _GRID_SIZE, _GRID_COORD
-    if _GRID_SIZE is None:
-        Gx, Gy, Gz, Gt = grid_size if grid_size is not None else [1, 1, 1, 1]
-        assert _MPI_SIZE == Gx * Gy * Gz * Gt
-        _GRID_SIZE = [Gx, Gy, Gz, Gt]
-        _GRID_COORD = getCoordFromRank(_MPI_RANK, _GRID_SIZE)
-        printRoot(f"INFO: Using gird {_GRID_SIZE}")
-
-    else:
-        warn("WARNING: PyLatticeIO is already initialized", RuntimeWarning)
-
-
 def getMPIComm():
     return _MPI_COMM
 
@@ -74,11 +55,26 @@ def getMPIRank():
     return _MPI_RANK
 
 
+def setGrid(
+    grid_size: List[int] = None,
+):
+    global _GRID_SIZE, _GRID_COORD
+    Gx, Gy, Gz, Gt = grid_size if grid_size is not None else [1, 1, 1, 1]
+    assert _MPI_SIZE == Gx * Gy * Gz * Gt
+    _GRID_SIZE = [Gx, Gy, Gz, Gt]
+    _GRID_COORD = getCoordFromRank(_MPI_RANK, _GRID_SIZE)
+    printRoot(f"INFO: Using gird {_GRID_SIZE}")
+
+
 def getGridSize():
+    Gx, Gy, Gz, Gt = _GRID_SIZE
+    assert _MPI_SIZE == Gx * Gy * Gz * Gt
     return _GRID_SIZE
 
 
 def getGridCoord():
+    Gx, Gy, Gz, Gt = _GRID_SIZE
+    assert _MPI_SIZE == Gx * Gy * Gz * Gt
     return _GRID_COORD
 
 

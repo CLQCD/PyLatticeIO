@@ -1,6 +1,8 @@
 import numpy as np
 import pylatticeio as io
 
+io.setGrid([1, 1, 1, 2])
+
 gauge_lime = io.readChromaQIOGauge("./data/weak_field.lime")
 gauge_kyu = io.readKYUGauge("./data/weak_field.kyu", [4, 4, 4, 8])
 print(np.linalg.norm(gauge_lime - gauge_kyu))

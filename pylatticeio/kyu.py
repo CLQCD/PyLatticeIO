@@ -76,8 +76,12 @@ def readGauge(filename: str, latt_size: List[int]):
 
 
 def writeGauge(filename: str, gauge: numpy.ndarray):
+    from . import getGridSize
+
     filename = path.expanduser(path.expandvars(filename))
-    latt_info = LatticeInfo(gauge.shape[1:5][::-1])
+    Lx, Ly, Lz, Lt = gauge.shape[1:5][::-1]
+    Gx, Gy, Gz, Gt = getGridSize()
+    latt_info = LatticeInfo([Gx * Lx, Gy * Ly, Gz * Lz, Gt * Lt])
 
     toGaugeBuffer(filename, 0, gauge, ">f8", latt_info)
 
@@ -181,7 +185,11 @@ def readPropagator(filename: str, latt_size: List[int]):
 
 
 def writePropagator(filename: str, propagator: numpy.ndarray):
+    from . import getGridSize
+
     filename = path.expanduser(path.expandvars(filename))
-    latt_info = LatticeInfo(propagator.shape[0:4][::-1])
+    Lx, Ly, Lz, Lt = propagator.shape[0:4][::-1]
+    Gx, Gy, Gz, Gt = getGridSize()
+    latt_info = LatticeInfo([Gx * Lx, Gy * Ly, Gz * Lz, Gt * Lt])
 
     toPropagatorBuffer(filename, 0, rotateToDiracPauli(propagator), ">f8", latt_info)
