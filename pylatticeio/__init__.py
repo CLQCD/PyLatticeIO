@@ -1,5 +1,5 @@
 from __future__ import annotations  # TYPE_CHECKING
-from typing import TYPE_CHECKING, Callable, List, Literal, NamedTuple, Tuple
+from typing import TYPE_CHECKING, Callable, List, Literal, NamedTuple, Sequence, Tuple
 from warnings import warn, filterwarnings
 
 if TYPE_CHECKING:
@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 from mpi4py import MPI
 from mpi4py.util import dtlib
+import numpy
+
 
 _MPI_COMM: MPI.Comm = MPI.COMM_WORLD
 _MPI_SIZE: int = _MPI_COMM.Get_size()
@@ -60,7 +62,7 @@ def setGrid(
 ):
     global _GRID_SIZE, _GRID_COORD
     Gx, Gy, Gz, Gt = grid_size if grid_size is not None else [1, 1, 1, 1]
-    assert _MPI_SIZE == Gx * Gy * Gz * Gt
+    assert Gx * Gy * Gz * Gt == _MPI_SIZE
     _GRID_SIZE = [Gx, Gy, Gz, Gt]
     _GRID_COORD = getCoordFromRank(_MPI_RANK, _GRID_SIZE)
     printRoot(f"INFO: Using gird {_GRID_SIZE}")
@@ -68,26 +70,57 @@ def setGrid(
 
 def getGridSize():
     Gx, Gy, Gz, Gt = _GRID_SIZE
-    assert _MPI_SIZE == Gx * Gy * Gz * Gt
+    assert Gx * Gy * Gz * Gt == _MPI_SIZE
     return _GRID_SIZE
 
 
 def getGridCoord():
     Gx, Gy, Gz, Gt = _GRID_SIZE
-    assert _MPI_SIZE == Gx * Gy * Gz * Gt
+    assert Gx * Gy * Gz * Gt == _MPI_SIZE
     return _GRID_COORD
 
 
-def openMPIFileRead(filename: str):
-    return MPI.File.Open(_MPI_COMM, filename, MPI.MODE_RDONLY)
+def readMPIFile(
+    filename: str,
+    disp: int,
+    dtype: str,
+    sizes: Sequence[int],
+    subsizes: Sequence[int],
+    starts: Sequence[int],
+):
+    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
+    buf = numpy.empty(subsizes, native_dtype)
+
+    fh = MPI.File.Open(_MPI_COMM, filename, MPI.MODE_RDONLY)
+    filetype = dtlib.from_numpy_dtype(native_dtype).Create_subarray(sizes, subsizes, starts)
+    filetype.Commit()
+    fh.Set_view(disp, filetype=filetype)
+    fh.Read_all(buf)
+    filetype.Free()
+    fh.Close()
+
+    return buf.view(dtype)
 
 
-def openMPIFileWrite(filename: str):
-    return MPI.File.Open(_MPI_COMM, filename, MPI.MODE_WRONLY | MPI.MODE_CREATE)
+def writeMPIFile(
+    filename: str,
+    disp: int,
+    buf: numpy.ndarray,
+    dtype: str,
+    sizes: Sequence[int],
+    subsizes: Sequence[int],
+    starts: Sequence[int],
+):
+    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
+    buf = buf.view(native_dtype)
 
-
-def getMPIDatatype(dtype: str):
-    return dtlib.from_numpy_dtype(dtype)
+    fh = MPI.File.Open(_MPI_COMM, filename, MPI.MODE_WRONLY | MPI.MODE_CREATE)
+    filetype = dtlib.from_numpy_dtype(native_dtype).Create_subarray(sizes, subsizes, starts)
+    filetype.Commit()
+    fh.Set_view(disp, filetype=filetype)
+    fh.Write_all(buf)
+    filetype.Free()
+    fh.Close()
 
 
 from .chroma import (

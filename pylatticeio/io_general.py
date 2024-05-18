@@ -4,6 +4,7 @@ from enum import IntEnum
 from typing import Any, Sequence
 
 import numpy
+from numpy.typing import NDArray
 
 
 class _DimensionType(IntEnum):
@@ -168,7 +169,7 @@ def read(filename: str):
     return head, data
 
 
-def write(filename: str, head: _FileType, data: numpy.ndarray[Any, numpy.float64]):
+def write(filename: str, head: _FileType, data: NDArray[numpy.float64]):
     assert head.dimensions_n_indices == data.shape
     assert data.dtype == numpy.float64
 

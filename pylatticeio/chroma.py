@@ -1,10 +1,8 @@
 import io
 from os import path
 import struct
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 from xml.etree import ElementTree as ET
-
-import numpy
 
 from .field import Ns, Nc, Nd, LatticeInfo
 
@@ -12,27 +10,23 @@ _precision_map = {"D": 8, "F": 4, "S": 4}
 
 
 def fromILDGGaugeBuffer(filename: str, offset: int, dtype: str, latt_info: LatticeInfo):
-    from . import openMPIFileRead, getMPIDatatype
+    from . import readMPIFile
 
     Gx, Gy, Gz, Gt = latt_info.grid_size
     gx, gy, gz, gt = latt_info.grid_coord
     Lx, Ly, Lz, Lt = latt_info.size
-    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
 
-    fh = openMPIFileRead(filename)
-    gauge_raw = numpy.empty((Lt, Lz, Ly, Lx, Nd, Nc, Nc), native_dtype)
-    filetype = getMPIDatatype(native_dtype).Create_subarray(
+    gauge_raw = readMPIFile(
+        filename,
+        offset,
+        dtype,
         (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Nd, Nc, Nc),
         (Lt, Lz, Ly, Lx, Nd, Nc, Nc),
         (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0, 0),
     )
-    filetype.Commit()
-    fh.Set_view(offset, filetype=filetype)
-    fh.Read_all(gauge_raw)
-    filetype.Free()
-    fh.Close()
+    gauge_raw = gauge_raw.transpose(4, 0, 1, 2, 3, 5, 6).astype("<c16")
 
-    return gauge_raw.transpose(4, 0, 1, 2, 3, 5, 6).view(dtype).astype("<c16")
+    return gauge_raw
 
 
 def readQIOGauge(filename: str):
@@ -71,42 +65,40 @@ def readQIOGauge(filename: str):
     return fromILDGGaugeBuffer(filename, offset, f">c{2*precision}", latt_info)
 
 
-def readILDGBinGauge(filename: str, dtype: str, latt_size: List[int]):
+def readILDGBinGauge(filename: str, dtype: str, latt_info: LatticeInfo):
     filename = path.expanduser(path.expandvars(filename))
-    latt_info = LatticeInfo(latt_size)
     return fromILDGGaugeBuffer(filename, 0, dtype, latt_info)
 
 
 def fromSCIDACPropagatorBuffer(filename: str, offset: int, dtype: str, latt_info: LatticeInfo, staggered: bool):
-    from . import openMPIFileRead, getMPIDatatype
+    from . import readMPIFile
 
     Gx, Gy, Gz, Gt = latt_info.grid_size
     gx, gy, gz, gt = latt_info.grid_coord
     Lx, Ly, Lz, Lt = latt_info.size
-    native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
 
-    fh = openMPIFileRead(filename)
     if not staggered:
-        propagator_raw = numpy.empty((Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc), native_dtype)
-        filetype = getMPIDatatype(native_dtype).Create_subarray(
+        propagator_raw = readMPIFile(
+            filename,
+            offset,
+            dtype,
             (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Ns, Ns, Nc, Nc),
             (Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc),
             (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0, 0, 0),
         )
+        propagator_raw = propagator_raw.astype("<c16")
     else:
-        propagator_raw = numpy.empty((Lt, Lz, Ly, Lx, Nc, Nc), native_dtype)
-        filetype = getMPIDatatype(native_dtype).Create_subarray(
+        propagator_raw = readMPIFile(
+            filename,
+            offset,
+            dtype,
             (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Nc, Nc),
             (Lt, Lz, Ly, Lx, Nc, Nc),
             (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0),
         )
-    filetype.Commit()
-    fh.Set_view(offset, filetype=filetype)
-    fh.Read_all(propagator_raw)
-    filetype.Free()
-    fh.Close()
+        propagator_raw = propagator_raw.astype("<c16")
 
-    return propagator_raw.view(dtype).astype("<c16")
+    return propagator_raw
 
 
 def readQIOPropagator(filename: str):
