@@ -1,4 +1,5 @@
 from os import path
+from typing import List, Union
 
 import numpy
 
@@ -16,8 +17,8 @@ def fromPropagatorBuffer(filename: str, offset: int, dtype: str, latt_info: Latt
 
     propagator_raw = readMPIFile(
         filename,
-        offset,
         dtype,
+        offset,
         (Ns, Nc, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Ns, Nc),
         (Ns, Nc, Lt, Lz, Ly, Lx, Ns, Nc),
         (0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0),
@@ -37,23 +38,25 @@ def toPropagatorBuffer(filename: str, offset: int, propagator_raw: numpy.ndarray
     propagator_raw = propagator_raw.astype(dtype).transpose(5, 7, 0, 1, 2, 3, 4, 6).copy()
     writeMPIFile(
         filename,
-        offset,
-        propagator_raw,
         dtype,
+        offset,
         (Ns, Nc, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Ns, Nc),
         (Ns, Nc, Lt, Lz, Ly, Lx, Ns, Nc),
         (0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0),
+        propagator_raw,
     )
 
 
-def readPropagator(filename: str, latt_info: LatticeInfo):
+def readPropagator(filename: str, latt_info: Union[LatticeInfo, List[int]]):
     filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(latt_info) if not isinstance(latt_info, LatticeInfo) else latt_info
     propagator_raw = fromPropagatorBuffer(filename, 0, "<c8", latt_info)
 
     return rotateToDeGrandRossi(propagator_raw)
 
 
-def writePropagator(filename: str, propagator: numpy.ndarray, latt_info: LatticeInfo):
+def writePropagator(filename: str, propagator: numpy.ndarray, latt_info: Union[LatticeInfo, List[int]]):
     filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(latt_info) if not isinstance(latt_info, LatticeInfo) else latt_info
 
     toPropagatorBuffer(filename, 0, rotateToDiracPauli(propagator), "<c8", latt_info)

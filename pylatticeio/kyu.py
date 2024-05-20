@@ -1,4 +1,5 @@
 from os import path
+from typing import List, Union
 
 import numpy
 
@@ -14,8 +15,8 @@ def fromGaugeBuffer(filename: str, offset: int, dtype: str, latt_info: LatticeIn
 
     gauge_raw = readMPIFile(
         filename,
-        offset,
         dtype,
+        offset,
         (Nd, Nc, Nc, 2, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx),
         (Nd, Nc, Nc, 2, Lt, Lz, Ly, Lx),
         (0, 0, 0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx),
@@ -47,24 +48,26 @@ def toGaugeBuffer(filename: str, offset: int, gauge_raw: numpy.ndarray, dtype: s
     )
     writeMPIFile(
         filename,
-        offset,
-        gauge_raw,
         dtype,
+        offset,
         (Nd, Nc, Nc, 2, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx),
         (Nd, Nc, Nc, 2, Lt, Lz, Ly, Lx),
         (0, 0, 0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx),
+        gauge_raw,
     )
 
 
-def readGauge(filename: str, latt_info: LatticeInfo):
+def readGauge(filename: str, latt_info: Union[LatticeInfo, List[int]]):
     filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(latt_info) if not isinstance(latt_info, LatticeInfo) else latt_info
     gauge_raw = fromGaugeBuffer(filename, 0, ">f8", latt_info)
 
     return gauge_raw
 
 
-def writeGauge(filename: str, gauge: numpy.ndarray, latt_info: LatticeInfo):
+def writeGauge(filename: str, gauge: numpy.ndarray, latt_info: Union[LatticeInfo, List[int]]):
     filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(latt_info) if not isinstance(latt_info, LatticeInfo) else latt_info
 
     toGaugeBuffer(filename, 0, gauge, ">f8", latt_info)
 
@@ -113,8 +116,8 @@ def fromPropagatorBuffer(filename: str, offset: int, dtype: str, latt_info: Latt
 
     propagator_raw = readMPIFile(
         filename,
-        offset,
         dtype,
+        offset,
         (Ns, Nc, 2, Ns, Nc, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx),
         (Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx),
         (0, 0, 0, 0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx),
@@ -146,23 +149,25 @@ def toPropagatorBuffer(filename: str, offset: int, propagator_raw: numpy.ndarray
     )
     writeMPIFile(
         filename,
-        offset,
-        propagator_raw,
         dtype,
+        offset,
         (Ns, Nc, 2, Ns, Nc, Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx),
         (Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx),
         (0, 0, 0, 0, 0, gt * Lt, gz * Lz, gy * Ly, gx * Lx),
+        propagator_raw,
     )
 
 
-def readPropagator(filename: str, latt_info: LatticeInfo):
+def readPropagator(filename: str, latt_info: Union[LatticeInfo, List[int]]):
     filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(latt_info) if not isinstance(latt_info, LatticeInfo) else latt_info
     propagator_raw = fromPropagatorBuffer(filename, 0, ">f8", latt_info)
 
     return rotateToDeGrandRossi(propagator_raw)
 
 
-def writePropagator(filename: str, propagator: numpy.ndarray, latt_info: LatticeInfo):
+def writePropagator(filename: str, propagator: numpy.ndarray, latt_info: Union[LatticeInfo, List[int]]):
     filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(latt_info) if not isinstance(latt_info, LatticeInfo) else latt_info
 
     toPropagatorBuffer(filename, 0, rotateToDiracPauli(propagator), ">f8", latt_info)

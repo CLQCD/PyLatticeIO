@@ -1,7 +1,7 @@
 import io
 from os import path
 import struct
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple, Union
 from xml.etree import ElementTree as ET
 
 from .field import Ns, Nc, Nd, LatticeInfo
@@ -18,8 +18,8 @@ def fromILDGGaugeBuffer(filename: str, offset: int, dtype: str, latt_info: Latti
 
     gauge_raw = readMPIFile(
         filename,
-        offset,
         dtype,
+        offset,
         (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Nd, Nc, Nc),
         (Lt, Lz, Ly, Lx, Nd, Nc, Nc),
         (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0, 0),
@@ -65,8 +65,9 @@ def readQIOGauge(filename: str):
     return fromILDGGaugeBuffer(filename, offset, f">c{2*precision}", latt_info)
 
 
-def readILDGBinGauge(filename: str, dtype: str, latt_info: LatticeInfo):
+def readILDGBinGauge(filename: str, dtype: str, latt_info: Union[LatticeInfo, List[int]]):
     filename = path.expanduser(path.expandvars(filename))
+    latt_info = LatticeInfo(latt_info) if not isinstance(latt_info, LatticeInfo) else latt_info
     return fromILDGGaugeBuffer(filename, 0, dtype, latt_info)
 
 
@@ -80,8 +81,8 @@ def fromSCIDACPropagatorBuffer(filename: str, offset: int, dtype: str, latt_info
     if not staggered:
         propagator_raw = readMPIFile(
             filename,
-            offset,
             dtype,
+            offset,
             (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Ns, Ns, Nc, Nc),
             (Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc),
             (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0, 0, 0),
@@ -90,8 +91,8 @@ def fromSCIDACPropagatorBuffer(filename: str, offset: int, dtype: str, latt_info
     else:
         propagator_raw = readMPIFile(
             filename,
-            offset,
             dtype,
+            offset,
             (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Nc, Nc),
             (Lt, Lz, Ly, Lx, Nc, Nc),
             (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0),
