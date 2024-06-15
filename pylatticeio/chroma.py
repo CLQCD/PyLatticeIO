@@ -1,29 +1,19 @@
 import io
 from os import path
 import struct
-from typing import Dict, List, Tuple, Union
+from typing import Dict, List, Tuple
 from xml.etree import ElementTree as ET
 
-from .field import Ns, Nc, Nd, LatticeInfo
+from . import getSublatticeSize, readMPIFile
 
+Nd, Ns, Nc = 4, 4, 3
 _precision_map = {"D": 8, "F": 4, "S": 4}
 
 
-def fromILDGGaugeBuffer(filename: str, offset: int, dtype: str, latt_info: LatticeInfo):
-    from . import readMPIFile
+def fromILDGGaugeFile(filename: str, offset: int, dtype: str, sublatt_size: List[int]):
+    Lx, Ly, Lz, Lt = sublatt_size
 
-    Gx, Gy, Gz, Gt = latt_info.grid_size
-    gx, gy, gz, gt = latt_info.grid_coord
-    Lx, Ly, Lz, Lt = latt_info.size
-
-    gauge_raw = readMPIFile(
-        filename,
-        dtype,
-        offset,
-        (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Nd, Nc, Nc),
-        (Lt, Lz, Ly, Lx, Nd, Nc, Nc),
-        (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0, 0),
-    )
+    gauge_raw = readMPIFile(filename, dtype, offset, (Lt, Lz, Ly, Lx, Nd, Nc, Nc), (3, 2, 1, 0))
     gauge_raw = gauge_raw.transpose(4, 0, 1, 2, 3, 5, 6).astype("<c16")
 
     return gauge_raw
@@ -61,42 +51,26 @@ def readQIOGauge(filename: str):
     assert int(scidac_private_record_xml.find("datacount").text) == Nd
     assert int(scidac_private_file_xml.find("spacetime").text) == Nd
     latt_size = [int(L) for L in scidac_private_file_xml.find("dims").text.split()]
-    latt_info = LatticeInfo(latt_size)
-    return fromILDGGaugeBuffer(filename, offset, f">c{2*precision}", latt_info)
+    sublatt_size = getSublatticeSize(latt_size)
+    gauge_raw = fromILDGGaugeFile(filename, offset, f">c{2*precision}", sublatt_size)
+    return latt_size, gauge_raw
 
 
-def readILDGBinGauge(filename: str, dtype: str, latt_info: Union[LatticeInfo, List[int]]):
+def readILDGBinGauge(filename: str, dtype: str, latt_size: List[int]):
     filename = path.expanduser(path.expandvars(filename))
-    latt_info = LatticeInfo(latt_info) if not isinstance(latt_info, LatticeInfo) else latt_info
-    return fromILDGGaugeBuffer(filename, 0, dtype, latt_info)
+    sublatt_size = getSublatticeSize(latt_size)
+    gauge_raw = fromILDGGaugeFile(filename, 0, dtype, sublatt_size)
+    return gauge_raw
 
 
-def fromSCIDACPropagatorBuffer(filename: str, offset: int, dtype: str, latt_info: LatticeInfo, staggered: bool):
-    from . import readMPIFile
-
-    Gx, Gy, Gz, Gt = latt_info.grid_size
-    gx, gy, gz, gt = latt_info.grid_coord
-    Lx, Ly, Lz, Lt = latt_info.size
+def fromSCIDACPropagatorFile(filename: str, offset: int, dtype: str, sublatt_size: List[int], staggered: bool):
+    Lx, Ly, Lz, Lt = sublatt_size
 
     if not staggered:
-        propagator_raw = readMPIFile(
-            filename,
-            dtype,
-            offset,
-            (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Ns, Ns, Nc, Nc),
-            (Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc),
-            (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0, 0, 0),
-        )
+        propagator_raw = readMPIFile(filename, dtype, offset, (Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc), (3, 2, 1, 0))
         propagator_raw = propagator_raw.astype("<c16")
     else:
-        propagator_raw = readMPIFile(
-            filename,
-            dtype,
-            offset,
-            (Gt * Lt, Gz * Lz, Gy * Ly, Gx * Lx, Nc, Nc),
-            (Lt, Lz, Ly, Lx, Nc, Nc),
-            (gt * Lt, gz * Lz, gy * Ly, gx * Lx, 0, 0),
-        )
+        propagator_raw = readMPIFile(filename, dtype, offset, (Lt, Lz, Ly, Lx, Nc, Nc), (3, 2, 1, 0))
         propagator_raw = propagator_raw.astype("<c16")
 
     return propagator_raw
@@ -140,5 +114,6 @@ def readQIOPropagator(filename: str):
     assert int(scidac_private_record_xml.find("datacount").text) == 1
     assert int(scidac_private_file_xml.find("spacetime").text) == Nd
     latt_size = [int(L) for L in scidac_private_file_xml.find("dims").text.split()]
-    latt_info = LatticeInfo(latt_size)
-    return fromSCIDACPropagatorBuffer(filename, offset, f">c{2*precision}", latt_info, staggered)
+    sublatt_size = getSublatticeSize(latt_size)
+    propagator_raw = fromSCIDACPropagatorFile(filename, offset, f">c{2*precision}", sublatt_size, staggered)
+    return latt_size, staggered, propagator_raw

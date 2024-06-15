@@ -1,7 +1,8 @@
 from ctypes import Union, Structure, c_char, c_int, sizeof
-from os import path
 from enum import IntEnum
-from typing import Any, Sequence
+import io
+from os import path
+from typing import Sequence
 
 import numpy
 from numpy.typing import NDArray
@@ -159,6 +160,15 @@ class _FileType(Union):
     def dimensions_n_indices(self):
         return self.head.dimensions_n_indices
 
+    def __repr__(self):
+        retval = ""
+        for i in range(self.n_dimensions):
+            retval += f"{_DimensionType(self.dimensions[i].type)._name_:18s}{self.dimensions[i].n_indices:<6d}( "
+            for j in range(self.dimensions[i].n_indices):
+                retval += f"{self.dimensions[i].indices[j]} "
+            retval += ")\n"
+        return retval
+
 
 def read(filename: str):
     filename = path.expanduser(path.expandvars(filename))
@@ -177,3 +187,21 @@ def write(filename: str, head: _FileType, data: NDArray[numpy.float64]):
     with open(filename, "wb") as f:
         f.write(bytes(head))
         f.write(data.tobytes())
+
+
+class IOGeneral:
+    def __init__(self, filename: str):
+        self.filename = path.expanduser(path.expandvars(filename))
+        with open(self.filename, "rb") as f:
+            self.head = _FileType.from_buffer_copy(f.read(sizeof(_FileType)))
+        self.data = None
+
+    def read(self):
+        with open(self.filename, "rb") as f:
+            f.seek(sizeof(_FileType), io.SEEK_SET)
+            self.data = numpy.frombuffer(f.read(), "<f8").reshape(self.head.dimensions_n_indices)
+
+    def write(self):
+        with open(self.filename, "wb") as f:
+            f.write(bytes(self.head))
+            f.write(self.data.reshape(self.head.dimensions_n_indices).tobytes())

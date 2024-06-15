@@ -1,16 +1,4 @@
-from __future__ import annotations  # TYPE_CHECKING
-from typing import TYPE_CHECKING, Callable, List, Literal, NamedTuple, Sequence, Tuple
-from warnings import warn, filterwarnings
-
-if TYPE_CHECKING:
-    from typing import Protocol, TypeVar
-    from _typeshed import SupportsFlush, SupportsWrite
-
-    _T_contra = TypeVar("_T_contra", contravariant=True)
-
-    class SupportsWriteAndFlush(SupportsWrite[_T_contra], SupportsFlush, Protocol[_T_contra]):
-        pass
-
+from typing import List, Sequence
 
 from mpi4py import MPI
 from mpi4py.util import dtlib
@@ -34,17 +22,6 @@ def getCoordFromRank(rank: int, grid: List[int]) -> List[int]:
     return [rank // t // z // y, rank // t // z % y, rank // t % z, rank % t]
 
 
-def printRoot(
-    *values: object,
-    sep: str | None = " ",
-    end: str | None = "\n",
-    file: SupportsWriteAndFlush[str] | None = None,
-    flush: bool = False,
-):
-    if _MPI_RANK == 0:
-        print(*values, sep=sep, end=end, file=file, flush=flush)
-
-
 def getMPIComm():
     return _MPI_COMM
 
@@ -65,7 +42,8 @@ def setGrid(
     assert Gx * Gy * Gz * Gt == _MPI_SIZE
     _GRID_SIZE = [Gx, Gy, Gz, Gt]
     _GRID_COORD = getCoordFromRank(_MPI_RANK, _GRID_SIZE)
-    printRoot(f"INFO: Using gird {_GRID_SIZE}")
+    if _MPI_RANK == 0:
+        print(f"INFO: Using gird {_GRID_SIZE}")
 
 
 def getGridSize():
@@ -80,21 +58,38 @@ def getGridCoord():
     return _GRID_COORD
 
 
+def getSublatticeSize(latt_size: List[int]):
+    Lx, Ly, Lz, Lt = latt_size
+    Gx, Gy, Gz, Gt = _GRID_SIZE
+    assert Lx % Gx == 0 and Ly % Gy == 0 and Lz % Gz == 0 and Lt % Gt == 0
+    return [Lx // Gx, Ly // Gy, Lz // Gz, Lt // Gt]
+
+
+def _getSubarray(shape: Sequence[int], axes: Sequence[int]):
+    sizes = [d for d in shape]
+    subsizes = [d for d in shape]
+    starts = [d if i in axes else 0 for i, d in enumerate(shape)]
+    for j, i in enumerate(axes):
+        sizes[i] *= _GRID_SIZE[j]
+        starts[i] *= _GRID_COORD[j]
+    return sizes, subsizes, starts
+
+
 def readMPIFile(
     filename: str,
     dtype: str,
-    disp: int,
-    sizes: Sequence[int],
-    subsizes: Sequence[int],
-    starts: Sequence[int],
+    offset: int,
+    shape: Sequence[int],
+    axes: Sequence[int],
 ):
+    sizes, subsizes, starts = _getSubarray(shape, axes)
     native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
     buf = numpy.empty(subsizes, native_dtype)
 
     fh = MPI.File.Open(_MPI_COMM, filename, MPI.MODE_RDONLY)
     filetype = dtlib.from_numpy_dtype(native_dtype).Create_subarray(sizes, subsizes, starts)
     filetype.Commit()
-    fh.Set_view(disp=disp, filetype=filetype)
+    fh.Set_view(disp=offset, filetype=filetype)
     fh.Read_all(buf)
     filetype.Free()
     fh.Close()
@@ -105,43 +100,151 @@ def readMPIFile(
 def writeMPIFile(
     filename: str,
     dtype: str,
-    disp: int,
-    sizes: Sequence[int],
-    subsizes: Sequence[int],
-    starts: Sequence[int],
+    offset: int,
+    shape: Sequence[int],
+    axes: Sequence[int],
     buf: numpy.ndarray,
 ):
+    sizes, subsizes, starts = _getSubarray(shape, axes)
     native_dtype = dtype if not dtype.startswith(">") else dtype.replace(">", "<")
     buf = buf.view(native_dtype)
 
     fh = MPI.File.Open(_MPI_COMM, filename, MPI.MODE_WRONLY | MPI.MODE_CREATE)
     filetype = dtlib.from_numpy_dtype(native_dtype).Create_subarray(sizes, subsizes, starts)
     filetype.Commit()
-    fh.Set_view(disp=disp, filetype=filetype)
+    fh.Set_view(disp=offset, filetype=filetype)
     fh.Write_all(buf)
     filetype.Free()
     fh.Close()
 
 
-from .chroma import (
-    readQIOGauge as readChromaQIOGauge,
-    readQIOPropagator as readChromaQIOPropagator,
+# matrices to convert gamma basis bewteen DeGrand-Rossi and Dirac-Pauli
+# \psi(DP) = _DR_TO_DP \psi(DR)
+# \psi(DR) = _DP_TO_DR \psi(DP)
+_DP_TO_DR = numpy.array(
+    [
+        [0, 1, 0, -1],
+        [-1, 0, 1, 0],
+        [0, 1, 0, 1],
+        [-1, 0, -1, 0],
+    ]
 )
-from .milc import (
-    readGauge as readMILCGauge,
-    readQIOPropagator as readMILCQIOPropagator,
+_DR_TO_DP = numpy.array(
+    [
+        [0, -1, 0, -1],
+        [1, 0, 1, 0],
+        [0, 1, 0, -1],
+        [-1, 0, 1, 0],
+    ]
 )
-from .kyu import (
-    readGauge as readKYUGauge,
-    writeGauge as writeKYUGauge,
-    readPropagator as readKYUPropagator,
-    writePropagator as writeKYUPropagator,
-)
-from .kyu_single import (
-    readPropagator as readKYUPropagatorF,
-    writePropagator as writeKYUPropagatorF,
-)
-from .io_general import (
-    read as readIOGeneral,
-    write as writeIOGeneral,
-)
+
+
+def rotateToDiracPauli(propagator: numpy.ndarray):
+    A = numpy.asarray(_DP_TO_DR)
+    Ainv = numpy.asarray(_DR_TO_DP) / 2
+
+    return numpy.ascontiguousarray(numpy.einsum("ij,tzyxjkab,kl->tzyxilab", Ainv, propagator, A, optimize=True))
+
+
+def rotateToDeGrandRossi(propagator: numpy.ndarray):
+    A = numpy.asarray(_DR_TO_DP)
+    Ainv = numpy.asarray(_DP_TO_DR) / 2
+
+    return numpy.ascontiguousarray(numpy.einsum("ij,tzyxjkab,kl->tzyxilab", Ainv, propagator, A, optimize=True))
+
+
+def readChromaQIOGauge(filename: str):
+    from .chroma import readQIOGauge as read
+
+    latt_size, gauge_raw = read(filename)
+    return gauge_raw
+
+
+def readQIOGauge(filename: str):
+    return readChromaQIOGauge(filename)
+
+
+def readILDGBinGauge(filename: str, dtype: str, latt_size: List[int]):
+    from .chroma import readILDGBinGauge as read
+
+    gauge_raw = read(filename, dtype, latt_size)
+    return gauge_raw
+
+
+def readChromaQIOPropagator(filename: str):
+    from .chroma import readQIOPropagator as read
+
+    latt_size, staggered, propagator_raw = read(filename)
+    return propagator_raw
+
+
+def readQIOPropagator(filename: str):
+    return readChromaQIOPropagator(filename)
+
+
+def readMILCGauge(filename: str):
+    from .milc import readGauge as read
+
+    latt_size, gauge_raw = read(filename)
+    return gauge_raw
+
+
+def readMILCQIOPropagator(filename: str):
+    from .milc import readQIOPropagator as read
+
+    latt_size, staggered, propagator_raw = read(filename)
+    return propagator_raw
+
+
+def readKYUGauge(filename: str, latt_size: List[int]):
+    from .kyu import readGauge as read
+
+    gauge_raw = read(filename, latt_size)
+    return gauge_raw
+
+
+def writeKYUGauge(filename: str, gauge: numpy.ndarray, latt_size: List[int]):
+    from .kyu import writeGauge as write
+
+    write(filename, gauge, latt_size)
+
+
+def readKYUPropagator(filename: str, latt_size: List[int]):
+    from .kyu import readPropagator as read
+
+    propagator_raw = read(filename, latt_size)
+    return rotateToDeGrandRossi(propagator_raw)
+
+
+def writeKYUPropagator(filename: str, propagator: numpy.ndarray, latt_size: List[int]):
+    from .kyu import writePropagator as write
+
+    write(filename, rotateToDiracPauli(propagator), latt_size)
+
+
+def readKYUPropagatorF(filename: str, latt_size: List[int]):
+    from .kyu_single import readPropagator as read
+
+    propagator_raw = read(filename, latt_size)
+    return rotateToDeGrandRossi(propagator_raw)
+
+
+def writeKYUPropagatorF(filename: str, propagator: numpy.ndarray, latt_size: List[int]):
+    from .kyu_single import writePropagator as write
+
+    write(filename, rotateToDiracPauli(propagator), latt_size)
+
+
+from .io_general import IOGeneral
+
+
+def readIOGeneral(filename: str):
+    from .io_general import read
+
+    return read(filename)
+
+
+def writeIOGeneral(filename: str, head, data):
+    from .io_general import write
+
+    write(filename, head, data)
