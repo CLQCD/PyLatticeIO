@@ -223,14 +223,14 @@ def writeKYUPropagator(filename: str, propagator: numpy.ndarray, latt_size: List
 
 
 def readKYUPropagatorF(filename: str, latt_size: List[int]):
-    from .kyu_single import readPropagator as read
+    from .xqcd import readPropagator as read
 
     propagator_raw = read(filename, latt_size)
     return rotateToDeGrandRossi(propagator_raw)
 
 
 def writeKYUPropagatorF(filename: str, propagator: numpy.ndarray, latt_size: List[int]):
-    from .kyu_single import writePropagator as write
+    from .xqcd import writePropagator as write
 
     write(filename, rotateToDiracPauli(propagator), latt_size)
 
