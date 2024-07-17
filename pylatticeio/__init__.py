@@ -222,17 +222,31 @@ def writeKYUPropagator(filename: str, propagator: numpy.ndarray, latt_size: List
     write(filename, rotateToDiracPauli(propagator), latt_size)
 
 
-def readKYUPropagatorF(filename: str, latt_size: List[int]):
+def readXQCDPropagator(filename: str, latt_size: List[int], staggered: bool):
     from .xqcd import readPropagator as read
 
-    propagator_raw = read(filename, latt_size)
-    return rotateToDeGrandRossi(propagator_raw)
+    propagator_raw = read(filename, latt_size, staggered)
+    if not staggered:
+        return rotateToDeGrandRossi(propagator_raw)
+    else:
+        return propagator_raw
+
+
+def writeXQCDPropagator(filename: str, propagator: numpy.ndarray, latt_size: List[int], staggered: bool):
+    from .xqcd import writePropagator as write
+
+    if not staggered:
+        write(filename, rotateToDiracPauli(propagator), latt_size, staggered)
+    else:
+        write(filename, propagator, latt_size, staggered)
+
+
+def readKYUPropagatorF(filename: str, latt_size: List[int]):
+    return readXQCDPropagator(filename, latt_size, False)
 
 
 def writeKYUPropagatorF(filename: str, propagator: numpy.ndarray, latt_size: List[int]):
-    from .xqcd import writePropagator as write
-
-    write(filename, rotateToDiracPauli(propagator), latt_size)
+    writeXQCDPropagator(filename, propagator, latt_size, False)
 
 
 from .io_general import IOGeneral
