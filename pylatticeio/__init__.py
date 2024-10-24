@@ -153,10 +153,10 @@ def rotateToDeGrandRossi(propagator: numpy.ndarray):
     return numpy.ascontiguousarray(numpy.einsum("ij,tzyxjkab,kl->tzyxilab", Ainv, propagator, A, optimize=True))
 
 
-def readChromaQIOGauge(filename: str):
+def readChromaQIOGauge(filename: str, checksum: bool = True):
     from .chroma import readQIOGauge as read
 
-    latt_size, gauge_raw = read(filename)
+    latt_size, gauge_raw = read(filename, checksum)
     return gauge_raw
 
 
@@ -171,10 +171,10 @@ def readILDGBinGauge(filename: str, dtype: str, latt_size: List[int]):
     return gauge_raw
 
 
-def readChromaQIOPropagator(filename: str):
+def readChromaQIOPropagator(filename: str, checksum: bool = True):
     from .chroma import readQIOPropagator as read
 
-    latt_size, staggered, propagator_raw = read(filename)
+    latt_size, staggered, propagator_raw = read(filename, checksum)
     return propagator_raw
 
 
@@ -182,11 +182,17 @@ def readQIOPropagator(filename: str):
     return readChromaQIOPropagator(filename)
 
 
-def readMILCGauge(filename: str):
+def readMILCGauge(filename: str, checksum: bool = True):
     from .milc import readGauge as read
 
-    latt_size, gauge_raw = read(filename)
+    latt_size, gauge_raw = read(filename, checksum)
     return gauge_raw
+
+
+def writeMILCGauge(filename: str, gauge: numpy.ndarray, latt_size: List[int]):
+    from .milc import writeGauge as write
+
+    write(filename, latt_size, gauge)
 
 
 def readMILCQIOPropagator(filename: str):
@@ -206,7 +212,7 @@ def readKYUGauge(filename: str, latt_size: List[int]):
 def writeKYUGauge(filename: str, gauge: numpy.ndarray, latt_size: List[int]):
     from .kyu import writeGauge as write
 
-    write(filename, gauge, latt_size)
+    write(filename, latt_size, gauge)
 
 
 def readKYUPropagator(filename: str, latt_size: List[int]):
@@ -219,7 +225,7 @@ def readKYUPropagator(filename: str, latt_size: List[int]):
 def writeKYUPropagator(filename: str, propagator: numpy.ndarray, latt_size: List[int]):
     from .kyu import writePropagator as write
 
-    write(filename, rotateToDiracPauli(propagator), latt_size)
+    write(filename, latt_size, rotateToDiracPauli(propagator))
 
 
 def readXQCDPropagator(filename: str, latt_size: List[int], staggered: bool):
@@ -236,9 +242,9 @@ def writeXQCDPropagator(filename: str, propagator: numpy.ndarray, latt_size: Lis
     from .xqcd import writePropagator as write
 
     if not staggered:
-        write(filename, rotateToDiracPauli(propagator), latt_size, staggered)
+        write(filename, latt_size, rotateToDiracPauli(propagator), staggered)
     else:
-        write(filename, propagator, latt_size, staggered)
+        write(filename, latt_size, propagator, staggered)
 
 
 def readKYUPropagatorF(filename: str, latt_size: List[int]):
