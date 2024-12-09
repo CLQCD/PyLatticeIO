@@ -21,12 +21,16 @@ The propagator will be rotated to DeGrand-Rossi basis.
 
 ## Supported format
 
-| Software   | Gauge      | Propagator | Other |
-| ---------- | ---------- | ---------- | ----- |
-| Chroma     | Read       | Read       |       |
-| MILC       | Read       | Read       |       |
-| KYU        | Read/Write | Read/Write |       |
-| IO General |            |            | Read  |
+| Software   | Gauge       | Propagator | Other |
+| ---------- | ----------- | ---------- | ----- |
+| Chroma     | Read        | Read       |       |
+| MILC       | Read        | Read       |       |
+| KYU        | Read/Write  | Read/Write |       |
+| openQCD    | Read/Write* |            |       |
+| NERSC      | Read        |            |       |
+| IO General |             |            | Read  |
+
+*Requires the plaquette value.
 
 ## MPI I/O with mpi4py
 The repository requires [mpi4py](https://github.com/mpi4py/mpi4py) to read lattice QCD data in parallel. You could setup the grid by calling `setGrid(grid_size)`. If you do not call this function, each process will read the entire field.
