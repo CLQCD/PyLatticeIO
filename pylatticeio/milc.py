@@ -7,7 +7,7 @@ from xml.etree import ElementTree as ET
 import numpy
 from mpi4py import MPI
 
-from .mpi_file import getGridCoord, getSublatticeSize, readMPIFile, writeMPIFile
+from ._mpi_file import getGridCoord, getSublatticeSize, readMPIFile, writeMPIFile
 
 Nd, Ns, Nc = 4, 4, 3
 _precision_map = {"D": 8, "F": 4, "S": 4}
@@ -64,7 +64,7 @@ def readGauge(filename: str, grid_size: List[int], checksum: bool = True):
         else:
             raise ValueError(f"Broken magic {magic} in MILC gauge")
         latt_size = struct.unpack(f"{endian}iiii", f.read(16))
-        time_stamp = f.read(64).decode()  # noqa: F841
+        timestamp = f.read(64).decode()  # noqa: F841
         assert struct.unpack(f"{endian}i", f.read(4))[0] == 0  # order
         sum29, sum31 = struct.unpack(f"{endian}II", f.read(8))
         offset = f.tell()

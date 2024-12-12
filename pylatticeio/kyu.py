@@ -3,7 +3,8 @@ from typing import List
 
 import numpy
 
-from .mpi_file import getSublatticeSize, readMPIFile, writeMPIFile
+from ._mpi_file import getSublatticeSize, readMPIFile, writeMPIFile
+from ._field_utils import spinMatrixFromDiracPauli, spinMatrixToDiracPauli
 
 Nd, Ns, Nc = 4, 4, 3
 
@@ -42,12 +43,13 @@ def readPropagator(filename: str, latt_size: List[int], grid_size: List[int]):
 
     propagator = readMPIFile(filename, dtype, offset, (Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx), (8, 7, 6, 5), grid_size)
     propagator = (
-        propagator.transpose(5, 6, 7, 8, 3, 0, 4, 1, 2)
+        propagator.transpose(3, 0, 5, 6, 7, 8, 4, 1, 2)
         .astype("<f8")
         .copy()
-        .reshape(Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc * 2)
+        .reshape(Ns, Ns, Lt, Lz, Ly, Lx, Nc, Nc * 2)
         .view("<c16")
     )
+    propagator = spinMatrixFromDiracPauli(propagator)
     return propagator
 
 
@@ -56,11 +58,12 @@ def writePropagator(filename: str, latt_size: List[int], grid_size: List[int], p
     Lx, Ly, Lz, Lt = getSublatticeSize(latt_size, grid_size)
     dtype, offset = ">f8", 0
 
+    propagator = spinMatrixToDiracPauli(propagator)
     propagator = (
         propagator.view("<f8")
-        .reshape(Lt, Lz, Ly, Lx, Ns, Ns, Nc, Nc, 2)
+        .reshape(Ns, Ns, Lt, Lz, Ly, Lx, Nc, Nc, 2)
         .astype(dtype)
-        .transpose(5, 7, 8, 4, 6, 0, 1, 2, 3)
+        .transpose(1, 7, 8, 0, 6, 2, 3, 4, 5)
         .copy()
     )
     writeMPIFile(filename, dtype, offset, (Ns, Nc, 2, Ns, Nc, Lt, Lz, Ly, Lx), (8, 7, 6, 5), grid_size, propagator)

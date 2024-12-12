@@ -3,7 +3,7 @@ from typing import List
 from mpi4py import MPI
 import numpy
 
-from .mpi_file import getGridCoord
+from ._mpi_file import getGridCoord
 
 _GRID_SIZE: List[int] = [1, 1, 1, 1]
 _GRID_COORD: List[int] = [0, 0, 0, 0]
@@ -120,32 +120,27 @@ def readKYUPropagator(filename: str, latt_size: List[int]):
     from .kyu import readPropagator as read
 
     propagator_raw = read(filename, latt_size, getGridSize())
-    return rotateToDeGrandRossi(propagator_raw)
+    # return rotateToDeGrandRossi(propagator_raw)
+    return propagator_raw
 
 
 def writeKYUPropagator(filename: str, latt_size: List[int], propagator: numpy.ndarray):
     from .kyu import writePropagator as write
 
-    write(filename, latt_size, getGridSize(), rotateToDiracPauli(propagator))
+    write(filename, latt_size, getGridSize(), propagator)
 
 
 def readXQCDPropagator(filename: str, latt_size: List[int], staggered: bool):
     from .xqcd import readPropagator as read
 
     propagator_raw = read(filename, latt_size, getGridSize(), staggered)
-    if not staggered:
-        return rotateToDeGrandRossi(propagator_raw)
-    else:
-        return propagator_raw
+    return propagator_raw
 
 
 def writeXQCDPropagator(filename: str, latt_size: List[int], propagator: numpy.ndarray, staggered: bool):
     from .xqcd import writePropagator as write
 
-    if not staggered:
-        write(filename, latt_size, getGridSize(), rotateToDiracPauli(propagator), staggered)
-    else:
-        write(filename, latt_size, getGridSize(), propagator, staggered)
+    write(filename, latt_size, getGridSize(), propagator, staggered)
 
 
 def readNERSCGauge(filename: str, link_trace: bool = True, checksum: bool = True):
