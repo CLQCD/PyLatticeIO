@@ -6,6 +6,8 @@ from xml.etree import ElementTree as ET
 
 import numpy
 
+from ._mpi_file import getGridSize, getGridCoord, getSublatticeSize
+
 Nc = 3
 
 
@@ -48,8 +50,6 @@ def readTimeSlice(filename: str, Ne: int = None):
     latt_size = [int(x) for x in format.find("lattSize").text.split()]
     if Ne is None:
         Ne = int(format.find("num_vecs").text)
-
-    from . import getGridSize, getGridCoord, getSublatticeSize
 
     Gx, Gy, Gz, Gt = getGridSize()
     gx, gy, gz, gt = getGridCoord()

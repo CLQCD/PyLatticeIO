@@ -1,7 +1,7 @@
 import numpy as np
 import pylatticeio as io
 
-io.setGrid([1, 1, 1, 2])
+io.init([1, 1, 2, 2])
 
 latt_size = [4, 4, 4, 8]
 
